@@ -178,7 +178,8 @@ export class RefinedSpace extends DynamicSpace {
 function editJoinsFromIncludeState(
   path: string[],
   from: StructDef,
-  includeState: IncludeProcessingState
+  includeState: IncludeProcessingState,
+  visited: Set<string> = new Set()
 ): FieldDef[] {
   let fields: FieldDef[];
   const joinedState = getIncludeStateForJoin(path, includeState);
@@ -198,6 +199,9 @@ function editJoinsFromIncludeState(
   const updatedFields: FieldDef[] = [];
   for (const field of fields) {
     const name = field.as ?? field.name;
+    const key = `${path.join('.')}:${name}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
     // TODO ensure you can't make it more permissive here...
     const accessModifier =
       joinedState.modifiers.get(name) ?? field.accessModifier;
@@ -221,14 +225,22 @@ function editJoinsFromIncludeState(
         }
       : {...field};
     if (isJoined(editedField)) {
-      updatedFields.push({
-        ...editedField,
-        fields: editJoinsFromIncludeState(
-          [...path, field.as ?? field.name],
-          editedField,
-          includeState
-        ),
-      });
+      const nextName = field.as ?? field.name;
+      const nextPath = [...path, nextName];
+      // Stop following cycles if the next join name has already appeared in the path
+      if (path.includes(nextName)) {
+        updatedFields.push({...editedField});
+      } else {
+        updatedFields.push({
+          ...editedField,
+          fields: editJoinsFromIncludeState(
+            nextPath,
+            editedField,
+            includeState,
+            visited
+          ),
+        });
+      }
     } else {
       updatedFields.push(editedField);
     }

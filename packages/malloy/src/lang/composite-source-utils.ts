@@ -1484,15 +1484,23 @@ function buildNamespace(fields: FieldDef[]): Namespace {
     nested: {},
   };
 
-  for (const field of fields) {
-    const name = field.as ?? field.name;
-    namespace.fields[name] = field;
+  const visited = new Set<FieldDef>();
 
-    // If it's a join with nested fields, recursively build its hierarchy
-    if (isJoined(field) && field.fields) {
-      namespace.nested[name] = buildNamespace(field.fields);
+  const build = (fs: FieldDef[], out: Namespace) => {
+    for (const field of fs) {
+      const name = field.as ?? field.name;
+      out.fields[name] = field;
+      if (visited.has(field)) continue;
+      visited.add(field);
+      if (isJoined(field) && field.fields) {
+        const child: Namespace = {fields: {}, nested: {}};
+        out.nested[name] = child;
+        build(field.fields, child);
+      }
     }
-  }
+  };
+
+  build(fields, namespace);
 
   return namespace;
 }
@@ -1567,12 +1575,21 @@ function sortIssuesByReferenceLocation(issues: CompositeIssue[]) {
   });
 }
 
-export function hasCompositesAnywhere(source: SourceDef): boolean {
+export function hasCompositesAnywhere(
+  source: SourceDef,
+  visited: Set<SourceDef> = new Set()
+): boolean {
+  if (visited.has(source)) return false;
+  visited.add(source);
   if (source.type === 'composite' || source.partitionComposite !== undefined) {
     return true;
   }
   for (const field of source.fields) {
-    if (isJoined(field) && isSourceDef(field) && hasCompositesAnywhere(field)) {
+    if (
+      isJoined(field) &&
+      isSourceDef(field) &&
+      hasCompositesAnywhere(field, visited)
+    ) {
       return true;
     }
   }

@@ -148,8 +148,10 @@ export class QueryFieldString extends QueryAtomicField<StringFieldDef> {}
  * for array and record types.
  */
 export class QueryFieldStruct extends QueryField {
-  queryStruct: QueryStruct;
   fieldDef: JoinFieldDef;
+  private _queryStruct: QueryStruct | undefined;
+  private _qsSourceArguments: Record<string, Argument> | undefined;
+  private _qsPrepareResultOptions: PrepareResultOptions | undefined;
   constructor(
     jfd: JoinFieldDef,
     sourceArguments: Record<string, Argument> | undefined,
@@ -159,12 +161,40 @@ export class QueryFieldStruct extends QueryField {
   ) {
     super(jfd, parent, referenceId);
     this.fieldDef = jfd;
-    this.queryStruct = new QueryStruct(
-      jfd,
-      sourceArguments,
-      {struct: parent},
-      prepareResultOptions
+    this._qsSourceArguments = sourceArguments;
+    this._qsPrepareResultOptions = prepareResultOptions;
+  }
+
+  get queryStruct(): QueryStruct {
+    return this.getOrBuildQueryStruct();
+  }
+
+  getOrBuildQueryStruct(): QueryStruct {
+    if (this._queryStruct) return this._queryStruct;
+    const buildCtx = this.parent.getBuildCtx();
+    const path = this.parent.getFullOutputName();
+    const key = `${this.parent.connectionName}|${path}${getIdentifier(
+      this.fieldDef
+    )}`;
+    if (buildCtx.constructing.has(key)) {
+      // Create a stub struct that does not expand its children
+      const stubDef = {...this.fieldDef, fields: [] as FieldDef[]};
+      this._queryStruct = new QueryStruct(
+        stubDef as unknown as StructDef,
+        this._qsSourceArguments,
+        {struct: this.parent},
+        this._qsPrepareResultOptions || {}
+      );
+      return this._queryStruct;
+    }
+    buildCtx.constructing.add(key);
+    this._queryStruct = new QueryStruct(
+      this.fieldDef,
+      this._qsSourceArguments,
+      {struct: this.parent},
+      this._qsPrepareResultOptions || {}
     );
+    return this._queryStruct;
   }
 
   /*
@@ -309,7 +339,34 @@ export class QueryStruct {
     }
 
     this.dialect = getDialect(this.findFirstDialect());
-    this.addFieldsFromFieldList(structDef.fields);
+    // Guard against cycles when building nested structs
+    const ctx = this.getBuildCtx();
+    const key = `${this.connectionName}|${getIdentifier(this.structDef)}`;
+    const inAncestorChain = (() => {
+      let p: QueryStruct | undefined = this.parent;
+      const me = getIdentifier(this.structDef);
+      while (p) {
+        if (getIdentifier(p.structDef) === me) return true;
+        p = p.parent;
+      }
+      return false;
+    })();
+    if (ctx.constructing.has(key) || inAncestorChain) {
+      // Do not expand fields further for back-edges
+      if (!this.nameMap.has('__distinct_key')) {
+        this.addFieldToNameMap(
+          '__distinct_key',
+          new QueryFieldDistinctKey({type: 'string', name: '__distinct_key'}, this)
+        );
+      }
+    } else {
+      ctx.constructing.add(key);
+      try {
+        this.addFieldsFromFieldList(structDef.fields);
+      } finally {
+        ctx.constructing.delete(key);
+      }
+    }
   }
 
   // Injeected factory to break circularity with QueryQuery
@@ -526,13 +583,16 @@ export class QueryStruct {
 
   // return the name of the field in Malloy
   getFullOutputName(): string {
-    if (this.parent) {
-      return (
-        this.parent.getFullOutputName() + getIdentifier(this.structDef) + '.'
-      );
-    } else {
-      return '';
+    const seen = new Set<QueryStruct>();
+    const parts: string[] = [];
+    let cur: QueryStruct | undefined = this;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      parts.push(getIdentifier(cur.structDef));
+      cur = cur.parent;
     }
+    parts.reverse();
+    return parts.length > 0 ? parts.join('.') + '.' : '';
   }
 
   unnestWithNumbers(): boolean {
@@ -582,35 +642,42 @@ export class QueryStruct {
       options: PrepareResultOptions | undefined
     ) => SourceDef | undefined
   ) {
-    if (this.structDef.type === 'query_source' && finalOutputStruct) {
-      const resultStruct = finalOutputStruct(
-        this.structDef.query,
-        this.prepareResultOptions
-      );
-
-      // should never happen.
-      if (!resultStruct) {
-        throw new Error("Internal Error, query didn't produce a struct");
-      }
-
-      const structDef = {...this.structDef};
-      for (const f of resultStruct.fields) {
-        const as = getIdentifier(f);
-        if (!this.nameMap.has(as)) {
-          structDef.fields.push(f);
-          this.nameMap.set(as, this.makeQueryField(f));
+    // Guard: avoid infinite recursion across cycles by tracking full join path keys
+    const visited = new Set<string>();
+    const walk = (qs: QueryStruct) => {
+      const key = `${qs.connectionName}|${qs.getFullOutputName()}${getIdentifier(
+        qs.structDef
+      )}`;
+      if (visited.has(key)) return;
+      visited.add(key);
+      if (qs.structDef.type === 'query_source' && finalOutputStruct) {
+        const resultStruct = finalOutputStruct(
+          qs.structDef.query,
+          qs.prepareResultOptions
+        );
+        if (!resultStruct) {
+          throw new Error("Internal Error, query didn't produce a struct");
+        }
+        const structDef = {...qs.structDef};
+        for (const f of resultStruct.fields) {
+          const as = getIdentifier(f);
+          if (!qs.nameMap.has(as)) {
+            structDef.fields.push(f);
+            qs.nameMap.set(as, qs.makeQueryField(f));
+          }
+        }
+        qs.structDef = structDef;
+        if (!qs.structDef.primaryKey && resultStruct.primaryKey) {
+          qs.structDef.primaryKey = resultStruct.primaryKey;
         }
       }
-      this.structDef = structDef;
-      if (!this.structDef.primaryKey && resultStruct.primaryKey) {
-        this.structDef.primaryKey = resultStruct.primaryKey;
+      for (const [, v] of qs.nameMap) {
+        if (v instanceof QueryFieldStruct) {
+          walk(v.getOrBuildQueryStruct());
+        }
       }
-    }
-    for (const [, v] of this.nameMap) {
-      if (v instanceof QueryFieldStruct) {
-        v.queryStruct.resolveQueryFields(finalOutputStruct);
-      }
-    }
+    };
+    walk(this);
   }
 
   getModel(): ModelRootInterface {
@@ -639,6 +706,20 @@ export class QueryStruct {
     } else {
       this.model = this.getModel();
     }
+  }
+
+  getBuildCtx(): {constructing: Set<string>} {
+    const m = this.getModel() as unknown as {
+      _buildCtx?: {constructing: Set<string>};
+    };
+    if (!m._buildCtx) m._buildCtx = {constructing: new Set<string>()};
+    return m._buildCtx;
+  }
+
+  getBuildCtx() {
+    return {
+      constructing: new Set<string>(),
+    };
   }
 
   /** makes a new queryable field object from a fieldDef */
@@ -685,7 +766,13 @@ export class QueryStruct {
   }
 
   root(): QueryStruct {
-    return this.parent ? this.parent.root() : this;
+    const seen = new Set<QueryStruct>();
+    let cur: QueryStruct = this;
+    while (cur.parent && !seen.has(cur)) {
+      seen.add(cur);
+      cur = cur.parent;
+    }
+    return cur;
   }
 
   primaryKey(): QueryBasicField | undefined {
