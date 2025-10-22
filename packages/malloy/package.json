@@ -1,5 +1,5 @@
 {
-  "name": "@malloydata/malloy",
+  "name": "@graphenedata/malloy",
   "version": "0.0.302",
   "license": "MIT",
   "exports": {
@@ -23,13 +23,13 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "homepage": "https://github.com/malloydata/malloy#readme",
+  "homepage": "https://github.com/graphenedata/malloy#readme",
   "engines": {
     "node": ">=20"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/malloydata/malloy"
+    "url": "https://github.com/graphenedata/malloy"
   },
   "scripts": {
     "test": "jest --config=../../jest.config.js",
