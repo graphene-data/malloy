@@ -21,6 +21,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 export {
+  DUCKDB_DIALECT_FUNCTIONS,
   DuckDBDialect,
   StandardSQLDialect,
   TrinoDialect,
@@ -41,6 +42,8 @@ export {
   variadicParam,
   literal,
   spread,
+  expandBlueprintMap,
+  getDialect,
   Dialect,
   TinyParser,
 } from './dialect';
@@ -122,6 +125,8 @@ export type {
   SourceComponentInfo,
   TimeLiteralNode,
   TypecastExpr,
+  StructRef,
+  AggregateFunctionType,
 } from './model';
 export {
   isSourceDef,
@@ -147,11 +152,14 @@ export {
   isDateUnit,
   // Used in testing, not really public API
   constantExprToSQL,
+  QueryModel,
 } from './model';
 export {
   malloyToQuery,
   // Needed for tests only
   MalloyTranslator,
+  GlobalNameSpace,
+  DialectNameSpace,
 } from './lang';
 export type {LogMessage, TranslateResponse} from './lang';
 export {

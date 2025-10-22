@@ -22,3 +22,5 @@
  */
 
 export * from './duckdb';
+
+export {DUCKDB_DIALECT_FUNCTIONS} from './dialect_functions';

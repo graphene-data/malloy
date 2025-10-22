@@ -35,3 +35,5 @@ export type {DocumentSymbol} from './parse-tree-walkers/document-symbol-walker';
 export type {DocumentCompletion} from './parse-tree-walkers/document-completion-walker';
 export type {LogMessage} from './parse-log';
 export {malloyToQuery} from './malloy-to-stable-query';
+export {GlobalNameSpace} from './ast/types/global-name-space';
+export {DialectNameSpace} from './ast/types/dialect-name-space';
