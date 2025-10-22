@@ -1275,12 +1275,21 @@ function sortIssuesByReferenceLocation(issues: CompositeIssue[]) {
   });
 }
 
-export function hasCompositesAnywhere(source: SourceDef): boolean {
+export function hasCompositesAnywhere(
+  source: SourceDef,
+  visited: Set<SourceDef> = new Set()
+): boolean {
+  if (visited.has(source)) return false;
+  visited.add(source);
   if (source.type === 'composite' || source.partitionComposite !== undefined) {
     return true;
   }
   for (const field of source.fields) {
-    if (isJoined(field) && isSourceDef(field) && hasCompositesAnywhere(field)) {
+    if (
+      isJoined(field) &&
+      isSourceDef(field) &&
+      hasCompositesAnywhere(field, visited)
+    ) {
       return true;
     }
   }
