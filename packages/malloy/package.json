@@ -1,6 +1,6 @@
 {
   "name": "@graphenedata/malloy",
-  "version": "0.0.302",
+  "version": "0.0.304",
   "license": "MIT",
   "exports": {
     ".": "./dist/index.js",
@@ -35,7 +35,7 @@
     "test": "jest --config=../../jest.config.js",
     "build-parser": "node src/lang/grammar/build_parser.js",
     "clean": "tsc --build --clean && rm -rf src/lang/lib dist",
-    "build": "npm run build-parser && tsc --build",
+    "build": "npm run build-parser && tsc --build --force",
     "malloyc": "ts-node ../../scripts/malloy-to-json",
     "prepublishOnly": "npm run clean && npm run build",
     "generate-version-file": "VERSION=$(npm pkg get version --workspaces=false | tr -d \\\")\necho \"// generated with 'generate-version-file' script; do not edit manually\\nexport const MALLOY_VERSION = '$VERSION';\" > src/version.ts"
