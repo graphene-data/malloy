@@ -138,6 +138,8 @@ export {
   isSamplingRows,
   isRepeatedRecord,
   isBasicArray,
+  isTemporalType,
+  isExtractUnit,
   mkArrayDef,
   mkFieldDef,
   expressionIsAggregate,
